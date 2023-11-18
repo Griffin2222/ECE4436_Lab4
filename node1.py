@@ -1,5 +1,4 @@
-from utils import TRACE, YES, NO, Rtpkt, tolayer2
-
+from utils import TRACE, YES, NO, Rtpkt, tolayer2, clocktime
 
 class DistanceTable:
     costs = [[0 for j in range(4)] for i in range(4)]
@@ -13,12 +12,47 @@ connectcosts1 = [1,  0,  1, 999]
 edges = [1, 0, 1, 999]
 node_id = 1
 
+
 def rtinit1():
-    pass
+    global dt, edges, node_id
+
+    # Initialize distance table
+    for i in range(4):
+        for j in range(4):
+            dt.costs[i][j] = 999  # Initialize with infinity
+
+    # Set direct costs to neighbors
+    for i in range(4):
+        dt.costs[i][i] = connectcosts1[i]
+
+    # Send initial distance vector to neighbors
+    tolayer2(Rtpkt(node_id, 0, [dt.costs[x][0] for x in range(4)]))
+    tolayer2(Rtpkt(node_id, 2, [dt.costs[x][2] for x in range(4)]))
+
+    # Print initialization message
+    print("rtinit1() called at time %f" % clocktime)
+    printdt1(dt)
 
 
 def rtupdate1(rcvdpkt):
-    pass
+    global dt, edges, node_id
+
+    # Update distance table based on received packet
+    change = False
+    for i in range(4):
+        if rcvdpkt.mincost[i] + edges[rcvdpkt.sourceid] < dt.costs[i][rcvdpkt.sourceid]:
+            dt.costs[i][rcvdpkt.sourceid] = rcvdpkt.mincost[i] + edges[rcvdpkt.sourceid]
+            change = True
+
+    # If there was a change, send updated distance vector to neighbors
+    if change:
+        tolayer2(Rtpkt(node_id, 0, [dt.costs[x][0] for x in range(4)]))
+        tolayer2(Rtpkt(node_id, 2, [dt.costs[x][2] for x in range(4)]))
+
+    # Print update information
+    print("rtupdate1() called at time %f" % clocktime)
+    print("Packet received from node %d" % rcvdpkt.sourceid)
+    printdt1(dt)
 
 
 def printdt1(dtptr):
@@ -31,9 +65,30 @@ def printdt1(dtptr):
 
 
 def linkhandler1(linkid, newcost):
-    '''called when cost from 1 to linkid changes from current value to newcost
-    You can leave this routine empty if you're an undergrad. If you want
-    to use this routine, you'll need to change the value of the LINKCHANGE
-    constant definition in prog3.c from 0 to 1
-    '''
-    pass
+    global dt, edges, node_id, clocktime
+
+    # Update the cost in the distance table
+    old_cost = edges[linkid]
+    edges[linkid] = newcost
+
+    # Update distance table entries affected by the link cost change
+    for i in range(4):
+        if i != linkid and dt.costs[i][linkid] == old_cost:
+            dt.costs[i][linkid] = newcost
+
+    # Check if the minimum cost to any node has changed
+    min_cost_change = False
+    for i in range(4):
+        if i != node_id and dt.costs[i][linkid] + edges[linkid] < dt.costs[i][node_id]:
+            dt.costs[i][node_id] = dt.costs[i][linkid] + edges[linkid]
+            min_cost_change = True
+
+    # If there was a change in minimum cost, send updated distance vector to neighbors
+    if min_cost_change:
+        tolayer2(Rtpkt(node_id, 0, [dt.costs[x][0] for x in range(4)]))
+        tolayer2(Rtpkt(node_id, 2, [dt.costs[x][2] for x in range(4)]))
+
+    # Print link cost change information
+    print("Link cost change for link %d to %d at time %f" % (node_id, linkid, clocktime))
+    print("New cost: %d" % newcost)
+    printdt1(dt)
